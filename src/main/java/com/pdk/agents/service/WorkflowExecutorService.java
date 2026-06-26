@@ -39,6 +39,7 @@ public class WorkflowExecutorService {
     private final ConditionEvaluator conditionEvaluator;
     private final MemoryService memoryService;
     private final AgentWebSocketHandler agentWebSocketHandler;
+    private final SemanticHandoffService semanticHandoffService;
 
     /**
      * Chạy một Workflow từ đầu đến cuối.
@@ -67,8 +68,8 @@ public class WorkflowExecutorService {
         // Lưu tin nhắn user vào conversation
         conversationService.addMessage(conversation, MessageRole.USER, request.message(), null);
 
-        // Lấy conversation history
-        String conversationHistory = conversationService.getRecentHistory(conversation.getId(), 10);
+        // Lấy conversation history (sử dụng nén Semantic Handoff nếu đạt ngưỡng)
+        String conversationHistory = semanticHandoffService.getCompressedHistory(conversation.getId());
 
         // Tìm Entry Node
         Node entryNode = findEntryNode(nodes, edges);
