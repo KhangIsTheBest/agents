@@ -230,3 +230,23 @@
 - Biên dịch thành công backend (`mvnw clean compile`): **BUILD SUCCESS**.
 - Đẩy toàn bộ thay đổi mã nguồn lên Git repository.
 
+---
+
+## Giai đoạn Self-Correction Loop: Vòng lặp tự kiểm định và sửa lỗi
+
+### Ngày: 2026-06-26
+
+#### ✅ Bước 1 — Thiết lập bộ đếm truy cập và giới hạn thử lại
+- Triển khai trong `WorkflowExecutorService.java`:
+  - Khai báo bộ đếm số lần chạy `nodeVisitCounts` kiểu Map cho mỗi luồng thực thi đồ thị.
+  - Định nghĩa giới hạn lặp tối đa `MAX_NODE_EXECUTION_LIMIT = 3` lần cho mỗi Node để ngăn chặn token bị rò rỉ hoặc treo server nếu AI gặp lỗi logic vô hạn.
+
+#### ✅ Bước 2 — Tích hợp cơ chế ngắt vòng lặp tự động
+- Kiểm tra số lần truy cập trước khi chạy Node: Nếu một Node bị gọi đến lần thứ 4, hệ thống lập tức ném ngoại lệ `IllegalStateException` và dừng khẩn cấp luồng xử lý.
+- Khi lặp ngược đồ thị (ví dụ Validator Agent trả về kết quả FAILED có chứa đường nối rẽ nhánh quay lại Executor Agent), Executor Agent sẽ lấy trực tiếp phản hồi/critique của Validator làm input để thực hiện việc tự sửa đổi kết quả một cách tự động (Self-Correction).
+
+#### ✅ Verification
+- Biên dịch thành công backend (`mvnw clean compile`): **BUILD SUCCESS**.
+- Đẩy toàn bộ thay đổi mã nguồn lên Git repository.
+
+
