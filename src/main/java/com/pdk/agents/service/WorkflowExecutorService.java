@@ -3,6 +3,7 @@ package com.pdk.agents.service;
 import com.pdk.agents.dto.ChatRequest;
 import com.pdk.agents.dto.ChatResponse;
 import com.pdk.agents.dto.ExecutionStep;
+import com.pdk.agents.dto.WebSocketEvent;
 import com.pdk.agents.entity.Conversation;
 import com.pdk.agents.entity.Edge;
 import com.pdk.agents.entity.Node;
@@ -11,6 +12,7 @@ import com.pdk.agents.exception.ResourceNotFoundException;
 import com.pdk.agents.repository.EdgeRepository;
 import com.pdk.agents.repository.NodeRepository;
 import com.pdk.agents.repository.WorkflowRepository;
+import com.pdk.agents.websocket.AgentWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,13 +25,6 @@ import java.util.stream.Collectors;
 
 /**
  * Workflow Executor — Engine duyệt đồ thị (Graph Traversal) với Intelligence Layer.
- *
- * Tính năng:
- * - Duyệt đồ thị Node → Edge → Node
- * - Branching logic: đánh giá condition_expression trên Edge
- * - Conversation history: lưu và truyền context qua các lượt chat
- * - Semantic Memory (RAG): inject tri thức liên quan vào prompt Agent
- * - Redis Cache: tránh gọi lại AI cho cùng input
  */
 @Service
 @RequiredArgsConstructor
@@ -43,6 +38,7 @@ public class WorkflowExecutorService {
     private final ConversationService conversationService;
     private final ConditionEvaluator conditionEvaluator;
     private final MemoryService memoryService;
+    private final AgentWebSocketHandler agentWebSocketHandler;
 
     /**
      * Chạy một Workflow từ đầu đến cuối.
@@ -90,70 +86,126 @@ public class WorkflowExecutorService {
         int stepOrder = 1;
         String finalOutput = "";
 
-        while (currentNode != null) {
-            final Node activeNode = currentNode;
+        try {
+            while (currentNode != null) {
+                final Node activeNode = currentNode;
 
-            // Tìm relevant memories cho Agent này (RAG)
-            String memoryContext = "";
-            try {
-                List<String> memories = memoryService.searchRelevant(activeNode.getId(), currentInput);
-                memoryContext = memoryService.formatAsContext(memories);
-            } catch (Exception e) {
-                log.warn("⚠ Memory search failed for Agent [{}]: {}", activeNode.getNodeName(), e.getMessage());
-                // Không block execution nếu memory search fail
+                // Gửi sự kiện Node bắt đầu chạy qua WebSocket
+                agentWebSocketHandler.broadcastEvent(new WebSocketEvent(
+                        "NODE_RUNNING",
+                        workflowId,
+                        conversation.getId(),
+                        activeNode.getId(),
+                        activeNode.getNodeName(),
+                        activeNode.getAgentType().name(),
+                        "RUNNING",
+                        null,
+                        null
+                ));
+
+                // Tìm relevant memories cho Agent này (RAG)
+                String memoryContext = "";
+                try {
+                    List<String> memories = memoryService.searchRelevant(activeNode.getId(), currentInput);
+                    memoryContext = memoryService.formatAsContext(memories);
+                } catch (Exception e) {
+                    log.warn("⚠ Memory search failed for Agent [{}]: {}", activeNode.getNodeName(), e.getMessage());
+                }
+
+                // Thực thi Agent với đầy đủ context
+                String output = agentExecutionService.execute(
+                        activeNode, currentInput, conversationHistory, memoryContext);
+
+                // Tạo đối tượng bước thực thi
+                ExecutionStep step = new ExecutionStep(
+                        stepOrder,
+                        activeNode.getId(),
+                        activeNode.getNodeName(),
+                        activeNode.getAgentType().name(),
+                        currentInput,
+                        output
+                );
+                executionLog.add(step);
+
+                // Gửi sự kiện Node hoàn thành chạy kèm kết quả qua WebSocket
+                agentWebSocketHandler.broadcastEvent(new WebSocketEvent(
+                        "NODE_COMPLETED",
+                        workflowId,
+                        conversation.getId(),
+                        activeNode.getId(),
+                        activeNode.getNodeName(),
+                        activeNode.getAgentType().name(),
+                        "COMPLETED",
+                        step,
+                        null
+                ));
+
+                // Lưu response của Agent vào conversation
+                conversationService.addMessage(conversation, MessageRole.ASSISTANT,
+                        output, activeNode.getId());
+
+                // Lưu output vào semantic memory (cho RAG tương lai)
+                try {
+                    memoryService.store(activeNode.getId(), output);
+                } catch (Exception e) {
+                    log.warn("⚠ Memory store failed for Agent [{}]: {}", activeNode.getNodeName(), e.getMessage());
+                }
+
+                finalOutput = output;
+
+                // ===== BRANCHING LOGIC =====
+                List<Edge> outgoingEdges = edges.stream()
+                        .filter(e -> e.getSourceNode().getId().equals(activeNode.getId()))
+                        .toList();
+
+                if (outgoingEdges.isEmpty()) {
+                    log.info("■ Workflow completed at Node [{}] after {} steps",
+                            activeNode.getNodeName(), stepOrder);
+                    break;
+                }
+
+                // Đánh giá conditions
+                Node nextNode = evaluateAndSelectNextNode(outgoingEdges, output, nodes);
+
+                if (nextNode == null) {
+                    log.info("■ No matching edge condition — workflow ends at [{}]",
+                            activeNode.getNodeName());
+                    break;
+                }
+
+                currentNode = nextNode;
+                currentInput = output;
+                stepOrder++;
             }
 
-            // Thực thi Agent với đầy đủ context
-            String output = agentExecutionService.execute(
-                    activeNode, currentInput, conversationHistory, memoryContext);
-
-            // Ghi log bước thực thi
-            executionLog.add(new ExecutionStep(
-                    stepOrder,
-                    activeNode.getId(),
-                    activeNode.getNodeName(),
-                    activeNode.getAgentType().name(),
-                    currentInput,
-                    output
+            // Gửi sự kiện toàn bộ Workflow hoàn thành qua WebSocket
+            agentWebSocketHandler.broadcastEvent(new WebSocketEvent(
+                    "WORKFLOW_COMPLETED",
+                    workflowId,
+                    conversation.getId(),
+                    null,
+                    null,
+                    null,
+                    "COMPLETED",
+                    null,
+                    finalOutput
             ));
 
-            // Lưu response của Agent vào conversation
-            conversationService.addMessage(conversation, MessageRole.ASSISTANT,
-                    output, activeNode.getId());
-
-            // Lưu output vào semantic memory (cho RAG tương lai)
-            try {
-                memoryService.store(activeNode.getId(), output);
-            } catch (Exception e) {
-                log.warn("⚠ Memory store failed for Agent [{}]: {}", activeNode.getNodeName(), e.getMessage());
-            }
-
-            finalOutput = output;
-
-            // ===== BRANCHING LOGIC =====
-            // Tìm edge tiếp theo với condition evaluation
-            List<Edge> outgoingEdges = edges.stream()
-                    .filter(e -> e.getSourceNode().getId().equals(activeNode.getId()))
-                    .toList();
-
-            if (outgoingEdges.isEmpty()) {
-                log.info("■ Workflow completed at Node [{}] after {} steps",
-                        activeNode.getNodeName(), stepOrder);
-                break;
-            }
-
-            // Đánh giá conditions — chọn edge phù hợp
-            Node nextNode = evaluateAndSelectNextNode(outgoingEdges, output, nodes);
-
-            if (nextNode == null) {
-                log.info("■ No matching edge condition — workflow ends at [{}]",
-                        activeNode.getNodeName());
-                break;
-            }
-
-            currentNode = nextNode;
-            currentInput = output;
-            stepOrder++;
+        } catch (Exception e) {
+            log.error("❌ Lỗi thực thi workflow: ", e);
+            // Gửi sự kiện Workflow thất bại qua WebSocket
+            agentWebSocketHandler.broadcastEvent(new WebSocketEvent(
+                    "WORKFLOW_FAILED",
+                    workflowId,
+                    conversation.getId(),
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    null,
+                    e.getMessage()
+            ));
+            throw e; // Ném ngược ngoại lệ để rollback / trả về HTTP Error
         }
 
         return new ChatResponse(workflowId, conversation.getId(), finalOutput, executionLog);
