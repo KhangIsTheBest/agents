@@ -23,7 +23,7 @@ spring:
       host: localhost
       port: 6379
 
-  # ===== Spring AI — Ollama Local =====
+  # ===== Spring AI — Ollama Local & OpenAI Cloud =====
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -34,6 +34,12 @@ spring:
       embedding:
         options:
           model: nomic-embed-text  # Model embedding 768 chiều cho Semantic Memory
+    openai:
+      api-key: ${OPENAI_API_KEY:demo-key}
+      chat:
+        options:
+          model: gpt-4o-mini
+          temperature: 0.4
 
 # ===== Server =====
 server:
