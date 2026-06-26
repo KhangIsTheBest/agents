@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: multi-agent-core
+
+  # ===== Database =====
+  datasource:
+    url: jdbc:postgresql://localhost:5433/multi_agent_db
+    username: postgres
+    password: root_password
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  # ===== Redis Cache =====
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  # ===== Spring AI — Ollama Local =====
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: qwen2.5:7b
+          temperature: 0.4
+      embedding:
+        options:
+          model: nomic-embed-text  # Model embedding 768 chiều cho Semantic Memory
+
+# ===== Server =====
+server:
+  port: 8080
+
+# ===== App Custom Config =====
+app:
+  cache:
+    ttl-minutes: 60          # TTL cho Redis cache (phút)
+  memory:
+    search-limit: 5           # Số memory trả về khi semantic search
