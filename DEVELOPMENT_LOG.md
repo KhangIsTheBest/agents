@@ -208,3 +208,25 @@
 #### ✅ Verification
 - Biên dịch thành công backend (`mvnw clean compile`): **BUILD SUCCESS**.
 - Đẩy toàn bộ thay đổi mã nguồn lên Git repository.
+
+---
+
+## Giai đoạn Semantic Handoff: Nén ngữ cảnh hội thoại bằng AI
+
+### Ngày: 2026-06-26
+
+#### ✅ Bước 1 — Thiết kế Service nén ngữ cảnh (SemanticHandoffService)
+- Tạo `SemanticHandoffService.java` chịu trách nhiệm đọc lịch sử thô và đánh giá điều kiện nén.
+- **Thiết lập ngưỡng (Threshold)**: Cơ chế nén chỉ kích hoạt khi lịch sử hội thoại dài hơn 1000 ký tự hoặc vượt quá 4 lượt tin nhắn.
+- **Prompt nén dữ liệu**: Hướng dẫn LLM nén thông tin hội thoại thô thành một chuỗi JSON có cấu trúc chứa: `intent` (ý định người dùng), `facts` (dữ kiện cốt lõi), `decisions` (các hành động/kết quả trước), và `status` (trạng thái hiện tại).
+- **Trình làm sạch và kiểm chứng**: Hỗ trợ bóc tách JSON từ markdown block (```json) và sử dụng `ObjectMapper` của Jackson để xác định tính hợp lệ của cú pháp JSON. Nếu AI trả về chuỗi JSON lỗi, hệ thống tự động Fallback về định dạng lịch sử thô thông thường để đảm bảo tính an toàn.
+
+#### ✅ Bước 2 — Tích hợp vào Workflow Engine
+- Cập nhật `WorkflowExecutorService.java`:
+  - Inject `SemanticHandoffService`.
+  - Thay thế bước tải lịch sử thô bằng `semanticHandoffService.getCompressedHistory(conversationId)`. Ngữ cảnh JSON tinh gọn sẽ được đưa vào làm ngữ cảnh hội thoại cho các tác nhân AI ở bước tiếp theo.
+
+#### ✅ Verification
+- Biên dịch thành công backend (`mvnw clean compile`): **BUILD SUCCESS**.
+- Đẩy toàn bộ thay đổi mã nguồn lên Git repository.
+
