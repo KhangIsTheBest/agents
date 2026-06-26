@@ -87,9 +87,28 @@ public class WorkflowExecutorService {
         int stepOrder = 1;
         String finalOutput = "";
 
+        // Bộ đếm số lần truy cập Node (ngăn vòng lặp vô hạn)
+        java.util.Map<String, Integer> nodeVisitCounts = new java.util.HashMap<>();
+        final int MAX_NODE_EXECUTION_LIMIT = 3;
+
         try {
             while (currentNode != null) {
                 final Node activeNode = currentNode;
+
+                // Tăng số lần truy cập node
+                int visits = nodeVisitCounts.getOrDefault(activeNode.getId(), 0) + 1;
+                nodeVisitCounts.put(activeNode.getId(), visits);
+
+                log.info("[Self-Correction] Agent [{}] - Lượt thực thi thứ: {}", activeNode.getNodeName(), visits);
+
+                // Kiểm tra giới hạn lặp (Self-Correction Loop guard)
+                if (visits > MAX_NODE_EXECUTION_LIMIT) {
+                    String errorMsg = String.format(
+                            "Vượt quá giới hạn tự sửa lỗi tối đa (%d lần) tại Agent [%s]",
+                            MAX_NODE_EXECUTION_LIMIT, activeNode.getNodeName());
+                    log.error("❌ Guard: {}", errorMsg);
+                    throw new IllegalStateException(errorMsg);
+                }
 
                 // Gửi sự kiện Node bắt đầu chạy qua WebSocket
                 agentWebSocketHandler.broadcastEvent(new WebSocketEvent(
