@@ -188,3 +188,23 @@
 - Đẩy toàn bộ mã nguồn frontend và backend lên Git repositories của người dùng.
 - Biên dịch backend (`mvnw clean compile`): **BUILD SUCCESS**.
 - Đóng gói frontend (`npm run build`): **SUCCESS** (biên dịch ra 100% mã javascript/css sạch).
+
+---
+
+## Giai đoạn Hybrid Routing & Local Fallback: Định tuyến mô hình & Tự phục hồi
+
+### Ngày: 2026-06-26
+
+#### ✅ Bước 1 — Cấu hình tích hợp OpenAI Cloud
+- Thêm dependency `spring-ai-starter-model-openai` vào `pom.xml`.
+- Cấu hình các thông số kết nối OpenAI trong `application.yaml` đi kèm API key placeholder mặc định (`demo-key`) để tránh ứng dụng bị lỗi khởi động khi thiếu biến môi trường.
+
+#### ✅ Bước 2 — Tích hợp Định tuyến và Phục hồi tại AgentExecutionService
+- Cập nhật `AgentExecutionService.java`:
+  - Khởi tạo rõ ràng hai client: `localChatClient` (gắn với Ollama) và `cloudChatClient` (gắn với OpenAI).
+  - Triển khai thuật toán định tuyến (Hybrid Routing): Tác vụ chạy `CLOUD` sẽ được điều hướng sang OpenAI, tác vụ chạy `LOCAL` sẽ chạy trực tiếp dưới local Ollama.
+  - Thiết kế khối lệnh xử lý dự phòng (Local Fallback): Nếu có bất cứ sự cố nào xảy ra với Cloud LLM (như API key không hợp lệ, lỗi mạng...), hệ thống sẽ tự động bắt exception, ghi log cảnh báo và chuyển hướng yêu cầu xử lý sang Local Ollama (qwen2.5:7b) ngay lập tức, bảo toàn luồng chạy nghiệp vụ Multi-Agent.
+
+#### ✅ Verification
+- Biên dịch thành công backend (`mvnw clean compile`): **BUILD SUCCESS**.
+- Đẩy toàn bộ thay đổi mã nguồn lên Git repository.
