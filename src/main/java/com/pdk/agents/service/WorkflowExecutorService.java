@@ -134,7 +134,7 @@ public class WorkflowExecutorService {
 
                 // Thực thi Agent với đầy đủ context
                 String output = agentExecutionService.execute(
-                        activeNode, currentInput, conversationHistory, memoryContext);
+                        activeNode, currentInput, conversation.getId(), conversationHistory, memoryContext);
 
                 // Tạo đối tượng bước thực thi
                 ExecutionStep step = new ExecutionStep(
